@@ -1,0 +1,6 @@
+.ftpconfig
+.ipynb_checkpoints*
+
+__pycache__/*
+plots/*
+TwitterCoordination
