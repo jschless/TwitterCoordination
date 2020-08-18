@@ -12,7 +12,8 @@ class Cascade(object):
         self.root = root
         self.retweets = retweets
         self.n_retweets = len(self.retweets)
-        self.missing_retweets = self.root.retweets - self.n_retweets
+        self.missing_retweets = self.root.retweets if self.root.retweets else 0
+        self.missing_retweets -= self.n_retweets
         self.temporal_cascade = None
 
     def get_follower_info(self):
@@ -36,14 +37,15 @@ class Cascade(object):
 
 
     def get_top_tweets(self, thresh=5):
-    # returns a dictionary of tweets and their implied outdegree
+        """ returns a dictionary of tweets and their implied outdegree
+        thresh is an int that is the min vertices for a node to be recorded
+        """
         if self.temporal_cascade == None:
             self.create_temporal_cascade()
 
         g = self.temporal_cascade
         locs = np.where(g.get_out_degrees(g.get_vertices()) > thresh)
         return [(g.vp.vertex_to_tweet[v], g.vertex(v).out_degree()) for v in locs[0]]
-
 
 
     def network_construction(self, temporal=True):
