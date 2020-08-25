@@ -18,14 +18,14 @@ def load_user_data():
         user_df = pickle.load(f)
     return user_df
 
-def process_campaign(campaigns, filter_func=lambda x: True):
+def process_campaign(campaigns, filter_func=lambda x: True, top_n=None):
     # takes a dict of form {hashtag: campaigns} and returns
     # list of cascades
     temp = []
     for hashtag, tweets in tqdm(campaigns.items()):
         temp += parse_cascades(
                         *process_tweet_ts(tweets.values()),
-                        filter_func=filter_func)
+                        filter_func=filter_func, top_n=top_n)
     return temp
 
 def process_tweet_ts(tts):
@@ -52,12 +52,13 @@ def process_tweet_ts(tts):
     return depth_one_rts, ids_to_tweets
 
 def parse_cascades(depth_one_rts, ids_to_tweets,
-                   filter_func=lambda x: True):
+                   filter_func=lambda x: True, top_n=None):
     """ Turns output of process_tweet_ts into a list of Cascade objects
     Input:
     depth_one_rts (dict: str -> list[dict]): dictionary mapping tweet ids to a list of tweet ids that retweeted
     ids_to_tweets (dict: str -> dict): dictionary mapping tweet ids to full tweet dicts
     filter_func (optional, default: always true): function that filters cascades
+    top_n (optional, default: None): int that chooses how many cascades to pick from each campaign
     Output:
     cascades (list[Cascade]): list of Cascade objects
     """
@@ -75,7 +76,10 @@ def parse_cascades(depth_one_rts, ids_to_tweets,
         except Exception as e:
             print(traceback.format_exc())
             continue
-    return cascades
+    if top_n:
+        return sorted(cascades, key=lambda x: -x.n_retweets)[:top_n]
+    else:
+        return cascades
 
 def parse_cascades_low_mem(depth_one_rts, ids_to_tweets, cascade_func=None):
     """ Processes cascades one at a time to conserve memory
