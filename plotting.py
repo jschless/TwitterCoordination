@@ -23,7 +23,8 @@ def plot_temporal_cascade(g, text_label_thresh=5, output_name=None):
     gt.graphviz_draw(g, layout='dot', output=output_file,
                     vcolor=vcolor, vcmap=matplotlib.cm.jet,
                     vsize=out_deg,
-                     vprops={"label": vtext,'fontsize': 100}, size=(60,60))
+                    vprops={"label": vtext,'fontsize': 100, 
+                    'fontcolor': 'white'}, size=(60,60))
     return WImage(filename=output_file)
 
 def color_nodes(g):
@@ -47,5 +48,3 @@ def show_color_bar(dic, cmap=plt.cm.jet):
     new_tick_locs = [x+.5 for x in bounds]
     cb.set_ticks(new_tick_locs[:-1])
     cb.set_ticklabels(labels)
-
-show_color_bar(participant_to_color)

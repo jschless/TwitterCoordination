@@ -38,7 +38,7 @@ class Cascade(object):
 
     def get_top_tweets(self, thresh=5):
         """ returns a dictionary of tweets and their implied outdegree
-        thresh is an int that is the min vertices for a node to be recorded
+        thresh is an int that is the min out degree for a node to be recorded
         """
         if self.temporal_cascade == None:
             self.create_temporal_cascade()
