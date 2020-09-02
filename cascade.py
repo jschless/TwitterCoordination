@@ -64,52 +64,34 @@ class Cascade(object):
         locs = np.where(g.get_out_degrees(g.get_vertices()) > thresh)
         return [(g.vp.vertex_to_tweet[v], g.vertex(v).out_degree()) for v in locs[0]]
 
-
-    def network_construction(self, temporal=True):
-        """ Creates a retweet network
-
-        type (optional): string that describes which time of network to
-        construct (default temporal)
-
-        """
-        followers_dict = self.get_follower_info()
-        network, id_dict = self.initialize_cascade_nodes()
-        for i in range(self.n_retweets-1, -1, -1):
-            # loop from most recent retweet to oldest retweet
-            retweeter = self.retweets[i]
-            v = id_dict[retweeter.id]
-            for j in range(i-1, -1, -1):
-                # find "influencer" by looping through all preceding RTs
-                prior_retweeter = self.retweets[j]
-                if retweeter.username in followers_dict[prior_retweeter.username]:
-                    # if retweeter follows prior_retweeter
-                    u = id_dict[prior_retweeter.id]
-                    network.add_edge(u, v)
-                    if temporal: # if temporal, then this is who its attributed to
-                        break
-                elif j == 0: # we've reached the end, so root must be influencer
-                    u = id_dict[self.root.id]
-                    network.add_edge(u, v)
-
-        # link first retweet to root (should fix this more elegantly but lazy!)
-        network.add_edge(id_dict[self.root.id],
-                         id_dict[self.retweets[0].id])
-        return network
-
     def probabilistic_network_construction(self, kind='uniform'):
         """ Creates a retweet network
 
         type (optional): string that describes type of network to
             'uniform': randomly choose one of the potential parents
             'proportional-followers': proportional to followers
-
+            'temporal': most recent guy is who we pick
+            'flow-graph': draw edge between all possibilities
         """
         followers_dict = self.get_follower_info()
         network, id_dict = self.initialize_cascade_nodes()
+
+        if kind == 'proportional-followers':
+            # create a mapping of usernames to followers only once
+            follower_counts = {}
+            for t in [self.root, *self.retweets]:
+                temp = followers_dict.get(t.username, [])
+                # for missing users, assume they have 10 followers
+                follower_counts[t] = len(temp) if len(temp) > 0 else 10
+
         for i in range(self.n_retweets-1, -1, -1):
             retweeter = self.retweets[i]
             v = id_dict[retweeter.id]
             potential_parents = [self.retweets[j] for j in range(i-1, -1, -1)]
+            potential_parents.append(self.root)
+            # limit potential parents to following
+            potential_parents = [p for p in potential_parents if
+                                retweeter.username in followers_dict[p.username]]
             if len(potential_parents) == 0:
                 u = id_dict[self.root.id]
                 network.add_edge(u, v)
@@ -117,44 +99,30 @@ class Cascade(object):
                 parent = np.random.choice(potential_parents)
                 u = id_dict[parent.id]
                 network.add_edge(u, v)
+            elif kind == 'temporal':
+                u = id_dict[potential_parents[0].id]
+                network.add_edge(u, v)
+            elif kind == 'flow-graph':
+                for p in potential_parents:
+                    u = id_dict[p.id]
+                    network.add_edge(u, v)
             elif kind == 'proportional-followers':
-                print('TODO')
-                # get n followers
-                n_followers = [x for x in potential_parents]
-                np.random.choice(potential_parents, p=n_followers/sum(n_followers))
+                n_followers = [follower_counts[p.username] for p in potential_parents]
+                normed = [x/sum(n_followers) for x in n_followers]
+                np.random.choice(potential_parents, p=normed)
+            else:
+                raise NameError(f'{kind} is not a supported network type')
         return network
 
 
-    def create_temporal_cascade(self):
-        file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_temporal.gt')
-        if os.path.exists(file_name):
-            self.temporal_cascade = gt.load_graph(file_name)
+    def create_network(self, kind, from_memory=True):
+        file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_{kind}.gt')
+        if os.path.exists(file_name) and from_memory:
+            return gt.load_graph(file_name)
         else:
-            self.temporal_cascade = self.network_construction()
-            self.temporal_cascade.save(file_name)
-        return self.temporal_cascade
-
-    def create_flow_graph(self):
-        file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_flow.gt')
-        if os.path.exists(file_name):
-            self.flow_graph = gt.load_graph(file_name)
-        else:
-            self.flow_graph = self.network_construction(temporal=False)
-            self.flow_graph.save(file_name)
-        return self.flow_graph
-
-    def create_flow_graph_spanning_tree(self, minimum=True):
-        """ Creates a spanning tree of the flow graph
-        If minimum is True, min spanning tree;
-        else: random spanning tree
-        """
-        if self.flow_graph is None:
-            self.create_flow_graph()
-        fg = self.flow_graph
-        if minimum:
-            return gt.GraphView(fg, efilt=gt.min_spanning_tree(fg))
-        else:
-            return gt.GraphView(fg, efilt=gt.random_spanning_tree(fg))
+            g = self.probabilistic_network_construction(kind=kind)
+            g.save(file_name)
+            return g
 
     def create_follower_network(self):
         self.follower_network, id_dict = self.initialize_cascade_nodes(usernames=True)
