@@ -19,11 +19,12 @@ class Cascade(object):
         self.temporal_cascade = None
         self.flow_graph = None
 
-    def __init__(self, pickle_file='example_cascade.pkl'):
+    @classmethod
+    def from_pickle(cls, pickle_file='example_cascade.pkl'):
         # loads a cascade from a pickle file
         with open(os.path.join(CASCADE_DIR, pickle_file), 'rb') as f:
             root, rt_list = pickle.load(f)
-            return Cascade(root, rt_list)
+            return cls(root, rt_list)
 
 
     def get_follower_info(self):
