@@ -15,6 +15,14 @@ class Cascade(object):
         self.missing_retweets = self.root.retweets if self.root.retweets else 0
         self.missing_retweets -= self.n_retweets
         self.temporal_cascade = None
+        self.flow_graph = None
+
+    def __init__(self, pickle_file='example_cascade.pkl'):
+        # loads a cascade from a pickle file
+        with open(os.path.join(CASCADE_DIR, pickle_file), 'rb') as f:
+            root, rt_list = pickle.load(f)
+            return Cascade(root, rt_list)
+
 
     def get_follower_info(self):
         # creates dictionary that maps usernames to a set of followers
@@ -31,10 +39,16 @@ class Cascade(object):
                     followers_dict[user] = set()
             except Exception as e:
                 # account may be deleted
-                print(e)
+                # print(e)
                 followers_dict[user] = set()
         return followers_dict
 
+    def save_cascade_components(self, filename=None):
+        if filename is None:
+            filename = self.root.id
+        with open(os.path.join(CASCADE_DIR, filename + '.pkl'), 'wb') as f:
+            pickle.dump((self.root, self.retweets), f)
+        return os.path.join(CASCADE_DIR, filename + '.pkl')
 
     def get_top_tweets(self, thresh=5):
         """ returns a dictionary of tweets and their implied outdegree
@@ -49,6 +63,12 @@ class Cascade(object):
 
 
     def network_construction(self, temporal=True):
+        """ Creates a retweet network
+
+        type (optional): string that describes which time of network to
+        construct (default temporal)
+
+        """
         followers_dict = self.get_follower_info()
         network, id_dict = self.initialize_cascade_nodes()
         for i in range(self.n_retweets-1, -1, -1):
@@ -64,8 +84,36 @@ class Cascade(object):
                 elif j == 0: # we've reached the end, so root is influencer
                     u = id_dict[self.root.id]
                     network.add_edge(u, v)
-
         return network
+
+    def probabilistic_network_construction(self, kind='uniform'):
+        """ Creates a retweet network
+
+        type (optional): string that describes type of network to
+            'uniform': randomly choose one of the potential parents
+            'proportional-followers': proportional to followers
+
+        """
+        followers_dict = self.get_follower_info()
+        network, id_dict = self.initialize_cascade_nodes()
+        for i in range(self.n_retweets-1, -1, -1):
+            retweeter = self.retweets[i]
+            v = id_dict[retweeter.id]
+            potential_parents = [self.retweets[j] for j in range(i-1, -1, -1)]
+            if len(potential_parents) == 0:
+                u = id_dict[self.root.id]
+                network.add_edge(u, v)
+            elif kind == 'uniform':
+                parent = np.random.choice(potential_parents)
+                u = id_dict[parent.id]
+                network.add_edge(u, v)
+            elif kind == 'proportional-followers':
+                print('TODO')
+                # get n followers
+                n_followers = [x for x in potential_parents]
+                np.random.choice(potential_parents, p=n_followers/sum(n_followers))
+        return network
+
 
     def create_temporal_cascade(self):
         file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_temporal.gt')
@@ -77,8 +125,26 @@ class Cascade(object):
         return self.temporal_cascade
 
     def create_flow_graph(self):
-        self.flow_graph = self.network_construction(temporal=False)
+        file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_flow.gt')
+        if os.path.exists(file_name):
+            self.flow_graph = gt.load_graph(file_name)
+        else:
+            self.flow_graph = self.network_construction(temporal=False)
+            self.flow_graph.save(file_name)
         return self.flow_graph
+
+    def create_flow_graph_spanning_tree(self, minimum=True):
+        """ Creates a spanning tree of the flow graph
+        If minimum is True, min spanning tree;
+        else: random spanning tree
+        """
+        if self.flow_graph is None:
+            self.create_flow_graph()
+        fg = self.flow_graph
+        if minimum:
+            return gt.GraphView(fg, efilt=gt.min_spanning_tree(fg))
+        else:
+            return gt.GraphView(fg, efilt=gt.random_spanning_tree(fg))
 
     def create_follower_network(self):
         self.follower_network, id_dict = self.initialize_cascade_nodes(usernames=True)
@@ -99,8 +165,7 @@ class Cascade(object):
         tweet_id_to_vertex = {}
         possible_missing_tweets = []
         nodes = [self.root, *self.retweets]
-        # if usernames:
-            # remove duplicates from a single source
+
         for node in [self.root, *self.retweets]:
             v = g.add_vertex()
             vertex_to_tweet[v] = node
