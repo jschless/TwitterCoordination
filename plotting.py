@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+
 participant_to_color = {'6_non-participant': 6, '2_official': 2, '3_fan': 3,
                         '1_itcell': 1, '5_deleted': 5, '4_other': 4}
 
@@ -23,7 +25,7 @@ def plot_temporal_cascade(g, text_label_thresh=5, output_name=None):
     gt.graphviz_draw(g, layout='dot', output=output_file,
                     vcolor=vcolor, vcmap=matplotlib.cm.jet,
                     vsize=out_deg,
-                    vprops={"label": vtext,'fontsize': 100, 
+                    vprops={"label": vtext,'fontsize': 100,
                     'fontcolor': 'white'}, size=(60,60))
     return WImage(filename=output_file)
 
