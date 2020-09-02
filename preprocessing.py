@@ -7,6 +7,12 @@ from tqdm import tqdm
 from tweet import Tweet
 from cascade import Cascade
 from config import TWITTER_DATA_DIR
+from config import CASCADE_DIR
+
+
+bandwagon_hashtags = set(['armedforcesflagday', 'goodgovernanceday',
+                'modiagain2019', 'bjpkamaljyoti', 'mainbhichowkidar',
+                     'bjpvijaysankalpbikerally', 'bogibeelbridge'])
 
 def load_campaign():
     with open(os.path.join(TWITTER_DATA_DIR, 'campaign_tweets_new.pkl'), 'rb') as f:
