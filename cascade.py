@@ -2,10 +2,12 @@
 import os
 import gzip
 import numpy as np
+import pickle
 import graph_tool.all as gt
 from config import FOLLOWER_DATA_DIR
 from config import CASCADE_DIR
 from tweet import Tweet, MissingTweet
+
 
 class Cascade(object):
     def __init__(self, root, retweets):
@@ -72,18 +74,25 @@ class Cascade(object):
         followers_dict = self.get_follower_info()
         network, id_dict = self.initialize_cascade_nodes()
         for i in range(self.n_retweets-1, -1, -1):
+            # loop from most recent retweet to oldest retweet
             retweeter = self.retweets[i]
             v = id_dict[retweeter.id]
             for j in range(i-1, -1, -1):
+                # find "influencer" by looping through all preceding RTs
                 prior_retweeter = self.retweets[j]
                 if retweeter.username in followers_dict[prior_retweeter.username]:
+                    # if retweeter follows prior_retweeter
                     u = id_dict[prior_retweeter.id]
                     network.add_edge(u, v)
-                    if temporal:
+                    if temporal: # if temporal, then this is who its attributed to
                         break
-                elif j == 0: # we've reached the end, so root is influencer
+                elif j == 0: # we've reached the end, so root must be influencer
                     u = id_dict[self.root.id]
                     network.add_edge(u, v)
+
+        # link first retweet to root (should fix this more elegantly but lazy!)
+        network.add_edge(id_dict[self.root.id],
+                         id_dict[self.retweets[0].id])
         return network
 
     def probabilistic_network_construction(self, kind='uniform'):
