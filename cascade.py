@@ -64,7 +64,7 @@ class Cascade(object):
         locs = np.where(g.get_out_degrees(g.get_vertices()) > thresh)
         return [(g.vp.vertex_to_tweet[v], g.vertex(v).out_degree()) for v in locs[0]]
 
-    def probabilistic_network_construction(self, kind='uniform'):
+    def probabilistic_network_construction(self, kind='uniform', log=False):
         """ Creates a retweet network
 
         type (optional): string that describes type of network to
@@ -72,6 +72,9 @@ class Cascade(object):
             'proportional-followers': proportional to followers
             'temporal': most recent guy is who we pick
             'flow-graph': draw edge between all possibilities
+
+        log (optional): boolean that determines whether to log n_followers in
+                        proportional-followers cascade
         """
         followers_dict = self.get_follower_info()
         network, id_dict = self.initialize_cascade_nodes()
@@ -82,7 +85,7 @@ class Cascade(object):
             for t in [self.root, *self.retweets]:
                 temp = followers_dict.get(t.username, [])
                 # for missing users, assume they have 10 followers
-                follower_counts[t] = len(temp) if len(temp) > 0 else 10
+                follower_counts[t.username] = len(temp) if len(temp) > 0 else 10
 
         for i in range(self.n_retweets-1, -1, -1):
             retweeter = self.retweets[i]
@@ -108,14 +111,19 @@ class Cascade(object):
                     network.add_edge(u, v)
             elif kind == 'proportional-followers':
                 n_followers = [follower_counts[p.username] for p in potential_parents]
+                if log:
+                    n_followers = np.log(n_followers)
                 normed = [x/sum(n_followers) for x in n_followers]
-                np.random.choice(potential_parents, p=normed)
+                parent = np.random.choice(potential_parents, p=normed)
+                u = id_dict[parent.id]
+                network.add_edge(u, v)
             else:
                 raise NameError(f'{kind} is not a supported network type')
         return network
 
 
     def create_network(self, kind, from_memory=True):
+        # wrapper for probabilistic_network_construction
         file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_{kind}.gt')
         if os.path.exists(file_name) and from_memory:
             return gt.load_graph(file_name)
