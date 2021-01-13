@@ -14,6 +14,9 @@ bandwagon_hashtags = set(['armedforcesflagday', 'goodgovernanceday',
                 'modiagain2019', 'bjpkamaljyoti', 'mainbhichowkidar',
                      'bjpvijaysankalpbikerally', 'bogibeelbridge'])
 
+never_trended = set(['hooghly_chalo', 'congressframedamitshah',
+                     'congressagainstnationalsecurity', 'nris4modi'])
+
 def load_campaign():
     with open(os.path.join(TWITTER_DATA_DIR, 'campaign_tweets_new.pkl'), 'rb') as f:
         campaigns = pickle.load(f)
@@ -106,5 +109,12 @@ def parse_cascades_low_mem(depth_one_rts, ids_to_tweets, cascade_func=None):
             if cascade_func:
                 cascade_func(cascade)
         except Exception as e:
-            print(e)
+            #print(e)
             continue
+
+def campaign_wide_cascade_apply(cascade_func):
+    # apply a function that takes a cascade to every single cascade
+    campaigns = load_campaign()
+    for hashtag, tweets in campaigns.items():
+        parse_cascades_low_mem(*process_tweet_ts(tweets.values()),
+                               cascade_func=cascade_func)

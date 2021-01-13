@@ -53,12 +53,12 @@ class Cascade(object):
             pickle.dump((self.root, self.retweets), f)
         return os.path.join(CASCADE_DIR, filename + '.pkl')
 
-    def get_top_tweets(self, thresh=5):
+    def get_top_tweets(self, attribution_model, thresh=5):
         """ returns a dictionary of tweets and their implied outdegree
         thresh is an int that is the min out degree for a node to be recorded
         """
-        if self.temporal_cascade == None:
-            self.create_temporal_cascade()
+        print('Not IMplemented')
+        return
 
         g = self.temporal_cascade
         locs = np.where(g.get_out_degrees(g.get_vertices()) > thresh)
@@ -71,6 +71,7 @@ class Cascade(object):
             'uniform': randomly choose one of the potential parents
             'proportional-followers': proportional to followers
             'temporal': most recent guy is who we pick
+            'reverse-temporal': oldest guy is who we pick
             'flow-graph': draw edge between all possibilities
 
         log (optional): boolean that determines whether to log n_followers in
@@ -87,12 +88,13 @@ class Cascade(object):
                 # for missing users, assume they have 10 followers
                 follower_counts[t.username] = len(temp) if len(temp) > 0 else 10
 
-        for i in range(self.n_retweets-1, -1, -1):
+        for i in range(self.n_retweets-1, -1, -1): # go through tweets in reverse chronological order
             retweeter = self.retweets[i]
             v = id_dict[retweeter.id]
             potential_parents = [self.retweets[j] for j in range(i-1, -1, -1)]
+            # potential parents are also in reverse chronological order
             potential_parents.append(self.root)
-            # limit potential parents to following
+            # limit potential parents to respect following
             potential_parents = [p for p in potential_parents if
                                 retweeter.username in followers_dict[p.username]]
             if len(potential_parents) == 0:
@@ -104,6 +106,9 @@ class Cascade(object):
                 network.add_edge(u, v)
             elif kind == 'temporal':
                 u = id_dict[potential_parents[0].id]
+                network.add_edge(u, v)
+            elif kind =='reverse-temporal':
+                u = id_dict[potential_parents[-1].id]
                 network.add_edge(u, v)
             elif kind == 'flow-graph':
                 for p in potential_parents:
@@ -121,14 +126,32 @@ class Cascade(object):
                 raise NameError(f'{kind} is not a supported network type')
         return network
 
+    def modify_network_and_save(self, kind, apply_func, suffix='', debug=False):
+        # applies a function to g and then g gets saved
+        # the function must create an internal property map for g
+        file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_{kind}{suffix}.gt')
+        if os.path.exists(file_name):
+            if debug:
+                print('loading graph')
+            g = gt.load_graph(file_name)
+            if debug:
+                print('Applying function')
+            apply_func(g)
+            if debug:
+                print('saving graph')
 
-    def create_network(self, kind, from_memory=True):
+            g.save(file_name)
+        else:
+            print('specified network does not exist')
+
+
+    def create_network(self, kind, from_memory=True, suffix='', **kwargs):
         # wrapper for probabilistic_network_construction
-        file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_{kind}.gt')
+        file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_{kind}{suffix}.gt')
         if os.path.exists(file_name) and from_memory:
             return gt.load_graph(file_name)
         else:
-            g = self.probabilistic_network_construction(kind=kind)
+            g = self.probabilistic_network_construction(kind=kind, **kwargs)
             g.save(file_name)
             return g
 
