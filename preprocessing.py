@@ -83,6 +83,7 @@ def parse_cascades(depth_one_rts, ids_to_tweets,
             if filter_func(c):
                 cascades.append(c)
         except Exception as e:
+            print('error')
             print(traceback.format_exc())
             continue
     if top_n:

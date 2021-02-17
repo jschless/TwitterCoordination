@@ -55,12 +55,12 @@ class Cascade(object):
 
     def get_top_tweets(self, attribution_model, thresh=5):
         """ returns a dictionary of tweets and their implied outdegree
+
+        attribution model is the cascade model to use
         thresh is an int that is the min out degree for a node to be recorded
         """
-        print('Not IMplemented')
-        return
 
-        g = self.temporal_cascade
+        g = cascade.probabilistic_network_construction(kind=attribution_model)
         locs = np.where(g.get_out_degrees(g.get_vertices()) > thresh)
         return [(g.vp.vertex_to_tweet[v], g.vertex(v).out_degree()) for v in locs[0]]
 

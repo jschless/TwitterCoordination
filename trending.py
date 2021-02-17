@@ -1,18 +1,18 @@
 import preprocessing
-from config import TRENDS_DIR
 import pandas as pd
 import tqdm
 import os
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, date, timedelta
-from config import TWITTER_DATA_DIR
+from config import TWITTER_DATA_DIR, FOLLOWER_DATA_DIR, TRENDS_DIR
 import pickle
 import seaborn as sns
 import statsmodels.formula.api as smf
 import graphviz as gr
 import warnings
 import numpy as np
+from typing import Tuple
 warnings.filterwarnings('ignore')
 
 def get_trend_behavior(ht):
@@ -44,7 +44,9 @@ def get_trend_behavior(ht):
 
 def build_df(hashtag, tweet_dict, exposures,
              time_bin='5Min', plot=False, normalize_time=False,
-             cutoff_choice='best'):
+             cutoff_choice='best', include_missing=True,
+             periods=1, raw_df_too=False, cumulative=False,
+             cache=False):
     # returns timeseries and inferred trending time
     for t_id, tweet in tweet_dict.items():
         tweet['adj_date'] = tweet['date'] + timedelta(hours=5, minutes=30)
@@ -59,6 +61,8 @@ def build_df(hashtag, tweet_dict, exposures,
             else:
                 tweet['type'] = 'regular_retweet'
 
+        f = os.path.join(FOLLOWER_DATA_DIR, tweet['username'] + '.gz')
+        tweet['follower_data'] = os.path.isfile(f)
         t_exp, n_exp, _ = exposures[hashtag][tweet['username']]
         tweet['template_exposure'] = t_exp
         tweet['normal_exposure'] = n_exp
@@ -66,7 +70,8 @@ def build_df(hashtag, tweet_dict, exposures,
 
     df = pd.DataFrame.from_dict(tweet_dict).transpose()
     df.index = df['adj_date']
-
+    if not include_missing:
+        df = df[df.follower_data == True]
     trending_data = pd.read_csv(os.path.join(TRENDS_DIR, hashtag+'.csv'), parse_dates=['datetime'])
 
     start = trending_data.datetime.min() + timedelta(hours=5, minutes=30)
@@ -89,35 +94,81 @@ def build_df(hashtag, tweet_dict, exposures,
     temp = temp[temp.total_exposure == 0].resample(time_bin).count().username.loc[min_date:max_date]
     series_list.append(temp)
 
+
     new_df = pd.DataFrame(series_list).T
     new_df.columns=[*types, 'nonzero_exposure_regular', 'zero_exposure_regular']
     new_df['total_engagement'] = new_df[types].sum(axis=1)
     new_df['rt_engagement'] = new_df[['regular_retweet', 'template_retweet']].sum(axis=1)
+
+    if cumulative:
+        new_df = new_df.cumsum()
+
     new_df['hashtag'] = hashtag
 
-    def find_jump(x, start):
-        # takes a ts and finds the spike within the start period
-        diffed = x.diff()
-        delta = pd.Timedelta(diffed.index.values[1] - diffed.index.values[0])
+    if cache:
+        # save data strucutres now that we've done the expensive stuff
+        return new_df, temp, start
 
-        if cutoff_choice == 'best':
-            for i in range(10):
-                candidate = diffed.idxmax()
-                if candidate >= start-timedelta(hours=1, minutes=5) and candidate < start:
-                    return candidate - delta
-                else: # zero out the candidate
-                    diffed[candidate] = 0
-            # no spike found in trending range
-        if cutoff_choice == 'earliest':
-            return start - timedelta(hours=1) - delta
+    exact_trending_loc = find_jump(temp, start, cutoff_choice, periods)
 
-        if cutoff_choice == 'latest':
-            return start
+    if normalize_time:
+        new_df.index = new_df.index - exact_trending_loc
+        new_df.index = new_df.index.map(lambda x: int(x.total_seconds() / 60))
+        df.index = df.index - exact_trending_loc
+        df.index = df.index.map(lambda x: int(x.total_seconds() / 60))
+        exact_trending_loc = 0
 
-        return start #- timedelta(hours=1, minutes=5)
+    new_df['time'] = new_df.index
+    new_df['time_i'] = range(len(new_df))
+    new_df['time_i2'] = new_df['time_i']*new_df['time_i']
+    new_df['trending_start'] = start
+    new_df['inferred_trending_start'] = exact_trending_loc
+    new_df = new_df.fillna(0)
+    df['time'] = df.index
+    df['trending_start'] = start
+    df['inferred_trending_start'] = exact_trending_loc
+    df['hashtag'] = hashtag
 
-    exact_trending_loc = find_jump(temp, start)
+    if plot:
+        plot_trending_ts(new_df, exact_trending_loc, hashtag)
 
+    if raw_df_too:
+        return new_df, df
+
+    return new_df, exact_trending_loc
+
+def find_jump(x, start, cutoff_choice, periods=1):
+    # takes a ts and finds the spike within the start period
+    diffed = x.diff(periods=periods)
+    #delta = pd.Timedelta(diffed.index.values[1] - diffed.index.values[0])
+    delta = pd.Timedelta(x.index.values[1] - x.index.values[0])
+
+    if type(cutoff_choice) is int:
+        # manually selecting a period in the range
+        return (start - timedelta(hours=1)) + delta*(cutoff_choice-1)
+
+    if cutoff_choice == 'best':
+        for i in range(10):
+            candidate = diffed.idxmax()
+            if candidate >= start-timedelta(hours=1, minutes=5) and candidate < start:
+                return candidate - delta
+            else: # zero out the candidate
+                diffed[candidate] = 0
+        # no spike found in trending range
+    if cutoff_choice == 'earliest':
+        return start - timedelta(hours=1) - delta
+
+    if cutoff_choice == 'latest':
+        return start
+
+    return start #- timedelta(hours=1, minutes=5)
+
+def build_df_cached(new_df, temp, start,
+             time_bin='5Min', plot=False, normalize_time=False,
+             cutoff_choice='best', include_missing=True,
+             periods=1, raw_df_too=False, cumulative=False):
+
+    exact_trending_loc = find_jump(temp, start, cutoff_choice, periods)
     if normalize_time:
         new_df.index = new_df.index - exact_trending_loc
         new_df.index = new_df.index.map(lambda x: int(x.total_seconds() / 60))
@@ -129,9 +180,9 @@ def build_df(hashtag, tweet_dict, exposures,
     new_df['trending_start'] = start
     new_df['inferred_trending_start'] = exact_trending_loc
     new_df = new_df.fillna(0)
-    if plot:
-        plot_trending_ts(new_df, exact_trending_loc, hashtag)
+
     return new_df, exact_trending_loc
+
 
 def run_statistics(data, thresh, periods=(12,12),
                    model_str="regular~time_i*threshold+nonzero_exposure_regular",
@@ -171,7 +222,7 @@ def run_statistics(data, thresh, periods=(12,12),
 
 def highlight_reg_output(res_df):
     def highlight_significant(s):
-        res = 'background-color: yellow' if abs(s.z) >= 1.96 else ''
+        res = 'background-color: yellow' if abs(float(s.z)) >= 1.96 else ''
         return [res for x in s]
 
     display(res_df.style.apply(highlight_significant, axis=1))
@@ -194,6 +245,8 @@ def plot_trending_ts(df, exact_trending_loc, hashtag, cols=['zero_exposure_regul
     for i, col in enumerate(cols):
         ax = plt.subplot(2, 1, i+1)
         temp = df[col]
+        label = None if i > 0 else 'Zero Exposure Tweets'
+
         ax.scatter(temp.index, temp, label='Zero Exposure Tweets')
 
         ax.axvline(exact_trending_loc, color='r', ls='--', label='Inferred Trending Time')
@@ -223,6 +276,23 @@ def plot_trending_ts(df, exact_trending_loc, hashtag, cols=['zero_exposure_regul
 #     by_label = dict(zip(labels, handles))
 #     plt.legend(by_label.values(), by_label.keys())
 #     plt.legend()
-    fig.suptitle(f'#{hashtag} Tweets Over Time')
+    fig.suptitle(f'#{hashtag} Tweets Over Time', size='x-large', weight='bold' )
 #     plt.tight_layout()
 #     plt.show()
+    return fig, ax
+
+
+def plot_event_study(df, cat: str='zero_exposure_regular', quantiles: Tuple[float, float] = (.025,.975),
+                    lower=-120, upper=120, title=None):
+    # useful for plotting panel data
+    if title is None:
+        title = cat
+    df = df.loc[(df.index>lower)&(df.index<upper)]
+    mean = df.groupby('time')[cat].mean()
+    p025 = df.groupby('time')[cat].quantile(quantiles[0])
+    p975 = df.groupby('time')[cat].quantile(quantiles[1])
+    plt.errorbar(mean.index, mean, xerr=.5, yerr=[mean-p025, p975-mean],
+                 fmt='o', capsize=10)
+    plt.title('Event Study of ' + title)
+    plt.xlabel('Time Since Trending')
+    plt.ylabel('Count')
