@@ -1,5 +1,11 @@
+#!/usr/bin/python
+import os
+import gzip
+import numpy as np
+import pickle
 import graph_tool.all as gt
 from config import FOLLOWER_DATA_DIR
+from config import CASCADE_DIR
 from tweet import Tweet, MissingTweet
 
 
@@ -8,7 +14,18 @@ class Cascade(object):
         self.root = root
         self.retweets = retweets
         self.n_retweets = len(self.retweets)
-        self.missing_retweets = self.root.retweets - self.n_retweets
+        self.missing_retweets = self.root.retweets if self.root.retweets else 0
+        self.missing_retweets -= self.n_retweets
+        self.temporal_cascade = None
+        self.flow_graph = None
+
+    @classmethod
+    def from_pickle(cls, pickle_file='example_cascade.pkl'):
+        # loads a cascade from a pickle file
+        with open(os.path.join(CASCADE_DIR, pickle_file), 'rb') as f:
+            root, rt_list = pickle.load(f)
+            return cls(root, rt_list)
+
 
     def get_follower_info(self):
         # creates dictionary that maps usernames to a set of followers
@@ -25,39 +42,119 @@ class Cascade(object):
                     followers_dict[user] = set()
             except Exception as e:
                 # account may be deleted
-                print(e)
+                # print(e)
                 followers_dict[user] = set()
         return followers_dict
-        
 
-    def network_construction(self, temporal=True):
+    def save_cascade_components(self, filename=None):
+        if filename is None:
+            filename = self.root.id
+        with open(os.path.join(CASCADE_DIR, filename + '.pkl'), 'wb') as f:
+            pickle.dump((self.root, self.retweets), f)
+        return os.path.join(CASCADE_DIR, filename + '.pkl')
+
+    def get_top_tweets(self, attribution_model, thresh=5):
+        """ returns a dictionary of tweets and their implied outdegree
+
+        attribution model is the cascade model to use
+        thresh is an int that is the min out degree for a node to be recorded
+        """
+
+        g = cascade.probabilistic_network_construction(kind=attribution_model)
+        locs = np.where(g.get_out_degrees(g.get_vertices()) > thresh)
+        return [(g.vp.vertex_to_tweet[v], g.vertex(v).out_degree()) for v in locs[0]]
+
+    def probabilistic_network_construction(self, kind='uniform', log=False):
+        """ Creates a retweet network
+
+        type (optional): string that describes type of network to
+            'uniform': randomly choose one of the potential parents
+            'proportional-followers': proportional to followers
+            'temporal': most recent guy is who we pick
+            'reverse-temporal': oldest guy is who we pick
+            'flow-graph': draw edge between all possibilities
+
+        log (optional): boolean that determines whether to log n_followers in
+                        proportional-followers cascade
+        """
         followers_dict = self.get_follower_info()
         network, id_dict = self.initialize_cascade_nodes()
-        for i in range(self.n_retweets-1, -1, -1):
+
+        if kind == 'proportional-followers':
+            # create a mapping of usernames to followers only once
+            follower_counts = {}
+            for t in [self.root, *self.retweets]:
+                temp = followers_dict.get(t.username, [])
+                # for missing users, assume they have 10 followers
+                follower_counts[t.username] = len(temp) if len(temp) > 0 else 10
+
+        for i in range(self.n_retweets-1, -1, -1): # go through tweets in reverse chronological order
             retweeter = self.retweets[i]
             v = id_dict[retweeter.id]
-            for j in range(i, -1, -1):
-                prior_retweeter = self.retweets[j]
-                if retweeter.username in followers_dict[prior_retweeter.username]:
-                    u = id_dict[prior_retweeter.id]
+            potential_parents = [self.retweets[j] for j in range(i-1, -1, -1)]
+            # potential parents are also in reverse chronological order
+            potential_parents.append(self.root)
+            # limit potential parents to respect following
+            potential_parents = [p for p in potential_parents if
+                                retweeter.username in followers_dict[p.username]]
+            if len(potential_parents) == 0:
+                u = id_dict[self.root.id]
+                network.add_edge(u, v)
+            elif kind == 'uniform':
+                parent = np.random.choice(potential_parents)
+                u = id_dict[parent.id]
+                network.add_edge(u, v)
+            elif kind == 'temporal':
+                u = id_dict[potential_parents[0].id]
+                network.add_edge(u, v)
+            elif kind =='reverse-temporal':
+                u = id_dict[potential_parents[-1].id]
+                network.add_edge(u, v)
+            elif kind == 'flow-graph':
+                for p in potential_parents:
+                    u = id_dict[p.id]
                     network.add_edge(u, v)
-                    if temporal:
-                        break 
-                elif j == 0: # we've reached the end, so root is influencer
-                    u = id_dict[self.root.id]                    
-                    network.add_edge(u, v)
-                        
+            elif kind == 'proportional-followers':
+                n_followers = [follower_counts[p.username] for p in potential_parents]
+                if log:
+                    n_followers = np.log(n_followers)
+                normed = [x/sum(n_followers) for x in n_followers]
+                parent = np.random.choice(potential_parents, p=normed)
+                u = id_dict[parent.id]
+                network.add_edge(u, v)
+            else:
+                raise NameError(f'{kind} is not a supported network type')
         return network
 
-        
-    def create_temporal_cascade(self): 
-        self.temporal_cascade = self.network_construction()                    
-        return self.temporal_cascade
-    
-    def create_flow_graph(self):
-        self.flow_graph = self.network_construction(temporal=False)
-        return self.flow_graph
-    
+    def modify_network_and_save(self, kind, apply_func, suffix='', debug=False):
+        # applies a function to g and then g gets saved
+        # the function must create an internal property map for g
+        file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_{kind}{suffix}.gt')
+        if os.path.exists(file_name):
+            if debug:
+                print('loading graph')
+            g = gt.load_graph(file_name)
+            if debug:
+                print('Applying function')
+            apply_func(g)
+            if debug:
+                print('saving graph')
+
+            g.save(file_name)
+        else:
+            print('specified network does not exist')
+
+
+    def create_network(self, kind, from_memory=True, suffix='', **kwargs):
+        # wrapper for probabilistic_network_construction
+        file_name = os.path.join(CASCADE_DIR, f'{self.root.id}_{kind}{suffix}.gt')
+        if os.path.exists(file_name) and from_memory:
+            return gt.load_graph(file_name)
+        else:
+            g = self.probabilistic_network_construction(kind=kind, **kwargs)
+            g.save(file_name)
+            return g
+
     def create_follower_network(self):
         self.follower_network, id_dict = self.initialize_cascade_nodes(usernames=True)
         followers_dict = self.get_follower_info()
@@ -66,7 +163,7 @@ class Cascade(object):
             for source in list(sources):
                 if source in id_dict: # if source was in RT network
                     self.follower_network.add_edge(id_dict[source], v)
-        
+
         return self.follower_network
 
     def initialize_cascade_nodes(self, usernames=False):
@@ -77,30 +174,29 @@ class Cascade(object):
         tweet_id_to_vertex = {}
         possible_missing_tweets = []
         nodes = [self.root, *self.retweets]
-        # if usernames:
-            # remove duplicates from a single source
+
         for node in [self.root, *self.retweets]:
             v = g.add_vertex()
             vertex_to_tweet[v] = node
-            key = node.username if usernames else node.id 
+            key = node.username if usernames else node.id
             tweet_id_to_vertex[key] = v
             if node.retweet_from != '':
                 possible_missing_tweets.append(
                     (node.retweet_id, node.retweet_from))
-            
+
         for id, user in possible_missing_tweets:
             # consider filling these deleted tweets in time series
             if id not in tweet_id_to_vertex:
                 tweet = MissingTweet(id, user)
                 v = g.add_vertex()
                 vertex_to_tweet[v] = node
-                key = node.username if usernames else node.id 
+                key = node.username if usernames else node.id
                 tweet_id_to_vertex[key] = v
-                
-                
+
+
         # internalize property map
         g.vp.vertex_to_tweet = vertex_to_tweet
         return g, tweet_id_to_vertex
-    
+
     def __repr__(self):
         return f'cascade of size {self.n_retweets}'
