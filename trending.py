@@ -46,9 +46,26 @@ def build_df(hashtag, tweet_dict, exposures,
              time_bin='5Min', plot=False, normalize_time=False,
              cutoff_choice='best', include_missing=True,
              periods=1, raw_df_too=False, cumulative=False,
-             cache=False):
-    # returns timeseries and inferred trending time
-    for t_id, tweet in tweet_dict.items():
+             cache=False, new_trending_data=True, trending_loc_cutoff=50,
+             user_exposes_himself=True):
+    '''Construct a dataframe with various specifications
+
+    Keyword arguments:
+    hashtag: the hashtag you're looking at
+    tweet_dict: a dictionary of all tweets in the hashtag
+    exposures: a dictionary that converts a hashtag user to their exposure
+
+    normalize_time: whether to reindex so beginning of trending is time 0, otherwise its datetime
+    time_bin: how to slice up the time bins using pandas
+    cutoff_choice: determines how to infer the exact trending time
+    include_missing: whether to include tweets from users we do not have information for.
+    periods: when looking for the inflection (cutoff_choice=best), how many periods should you look over?
+
+
+    '''
+    users = set()
+
+    for tweet in sorted(tweet_dict.values(), key=lambda x: x['date']):
         tweet['adj_date'] = tweet['date'] + timedelta(hours=5, minutes=30)
         if tweet['retweet_from'] == '':
             if tweet['template'] != '':
@@ -63,19 +80,40 @@ def build_df(hashtag, tweet_dict, exposures,
 
         f = os.path.join(FOLLOWER_DATA_DIR, tweet['username'] + '.gz')
         tweet['follower_data'] = os.path.isfile(f)
+
         t_exp, n_exp, _ = exposures[hashtag][tweet['username']]
+        already_posted = tweet['username'] in users
         tweet['template_exposure'] = t_exp
         tweet['normal_exposure'] = n_exp
         tweet['total_exposure'] = t_exp + n_exp
+        if t_exp + n_exp == 0 and already_posted and user_exposes_himself:
+            tweet['total_exposure'] = 1
+        users.add(tweet['username'])
 
     df = pd.DataFrame.from_dict(tweet_dict).transpose()
     df.index = df['adj_date']
     if not include_missing:
         df = df[df.follower_data == True]
-    trending_data = pd.read_csv(os.path.join(TRENDS_DIR, hashtag+'.csv'), parse_dates=['datetime'])
 
-    start = trending_data.datetime.min() + timedelta(hours=5, minutes=30)
-    end = trending_data.datetime.max() + timedelta(hours=5, minutes=30)
+    if new_trending_data:
+        f_name = os.path.join(TRENDS_DIR, hashtag+'_country_trending.pkl')
+        trending_data = pd.read_pickle(f_name)
+
+        # apply query, must be lower than the stated ranking
+
+        trending_data = trending_data[trending_data.within_group_ranking <= trending_loc_cutoff]
+
+        if len(trending_data) == 0:
+            print(hashtag, ' did not trend with location less than or equal to',
+                  trending_loc_cutoff)
+            return None, None
+        start = trending_data.datetime.min() + timedelta(hours=5, minutes=30)
+        end = trending_data.datetime.max() + timedelta(hours=5, minutes=30)
+
+    else:
+        trending_data = pd.read_csv(os.path.join(TRENDS_DIR, hashtag+'.csv'), parse_dates=['datetime'])
+        start = trending_data.datetime.min() + timedelta(hours=5, minutes=30)
+        end = trending_data.datetime.max() + timedelta(hours=5, minutes=30)
 
     min_date = start - timedelta(hours=6)
     max_date = end + timedelta(hours=6)
@@ -109,6 +147,10 @@ def build_df(hashtag, tweet_dict, exposures,
         # save data strucutres now that we've done the expensive stuff
         return new_df, temp, start
 
+    if len(temp) == 0:
+        print('dataframe is empty for some reason', temp)
+        print('dates', min_date, max_date)
+        return df, df
     exact_trending_loc = find_jump(temp, start, cutoff_choice, periods)
 
     if normalize_time:
@@ -141,8 +183,10 @@ def find_jump(x, start, cutoff_choice, periods=1):
     # takes a ts and finds the spike within the start period
     diffed = x.diff(periods=periods)
     #delta = pd.Timedelta(diffed.index.values[1] - diffed.index.values[0])
-    delta = pd.Timedelta(x.index.values[1] - x.index.values[0])
-
+    try:
+        delta = pd.Timedelta(x.index.values[1] - x.index.values[0])
+    except Exception as e:
+        print(e, 'on this ts\n', x)
     if type(cutoff_choice) is int:
         # manually selecting a period in the range
         return (start - timedelta(hours=1)) + delta*(cutoff_choice-1)
@@ -156,7 +200,7 @@ def find_jump(x, start, cutoff_choice, periods=1):
                 diffed[candidate] = 0
         # no spike found in trending range
     if cutoff_choice == 'earliest':
-        return start - timedelta(hours=1) - delta
+        return start - timedelta(hours=1) #- delta
 
     if cutoff_choice == 'latest':
         return start
@@ -227,7 +271,8 @@ def highlight_reg_output(res_df):
 
     display(res_df.style.apply(highlight_significant, axis=1))
 
-def plot_trending_ts(df, exact_trending_loc, hashtag, cols=['zero_exposure_regular', 'total_engagement']):
+def plot_trending_ts(df, exact_trending_loc, hashtag, cols=['zero_exposure_regular', 'total_engagement'],
+                     trending_rankings=None):
     # takes a df and plots the time series with some acoutrements
     fig = plt.figure(figsize=(14,9))
 
@@ -255,7 +300,11 @@ def plot_trending_ts(df, exact_trending_loc, hashtag, cols=['zero_exposure_regul
                  label='Resolution Error')
         ax.plot([start, end], [max_hist_level]*2, '-', color='black', alpha=1)
         ax.plot([start, end], [max_hist_level]*2, '|', color='black')
-        ax.text(start + (end-start)/2, max_hist_level/1.1, f'#{hashtag} trending', fontsize=12, horizontalalignment='center')
+        if i == 0:
+            ax.text(start + (end-start)/2, max_hist_level*1.05, f'#{hashtag} trending', fontsize=12, horizontalalignment='center')
+        if trending_rankings and col == 'zero_exposure_regular':
+            for i in range(len(trending_rankings)):
+                ax.text(start+timedelta(hours=i), max_hist_level*1.05, trending_rankings[i])
         ax.set_xlabel('Time', fontsize=18)
         ax.set_ylabel('Tweet volume', fontsize=16)
         ax.set_xlim(min_date, max_date)
@@ -267,8 +316,8 @@ def plot_trending_ts(df, exact_trending_loc, hashtag, cols=['zero_exposure_regul
         ax.xaxis.set_minor_locator(minutes)
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
         #ax.format_xdata = mdates.DateFormatter('%Y-%m-%d')
-        ax.grid(True)
-        ax.grid(True, 'minor')
+        # ax.grid(True)
+        # ax.grid(True, 'minor')
 
 
     fig.autofmt_xdate()
