@@ -1,31 +1,29 @@
 # TwitterCoordination
+This repo contains the files I used in Chapter 2 of my Master's Thesis. 
 
-## Files 
-I'll divide the files into three categories: cascades, NLP, and studying trending effects.
 
-### Cascades
-- __THESIS_Preliminary_Findings.ipynb__: Final visualizations for first parts of thesis
-- __cascade.py__: Defines a class for creating a retweet cascade from a root tweet to a retweet
-- __build_cascades.py__: Script for meta-analysis of different retweet attribution methods 
-- ___Alternate_Attritbution_Methods.ipynb__: Constructing different attribution methods
-- ___Analysis_of_Attritbution_Methods.ipynb__: Statistical analysis of properties of different attribtuion methods
-- __Hashtag_Cascades_Aggregate.ipynb__: Studying cascades for all hashtags
-- __Hashtag_Cascades_Case_Study.ipynb__: Studying cascades for a specific hashtag
-- __Templated_Tweets_v_Regular_Tweets.ipynb__: Studying templates v regular
+## Main Files 
+The main python files I used are below. Some are stand alone scripts, others are imported in the notebooks in the next section.
 
-### Trending Effects
-- __trending.py__: Functions for building time series dataframes
+- __preprocessing.py__: Functions for loading dataset
+- __trending.py__: Functions for building time series dataframes and integrating trending data
 - __exposure_script.py__: Script for calculating number of follower network exposures before first tweet
-- __THESIS_Trending_Effect_Table_Regressions.ipynb__: Notebook with regressions
-- __THESIS_Specification_Curve_2.ipynb__: Spec curve analysis 
-
-### NLP
-- __encode_sentences.py__: 
-- __Semantic_Similarity_Aggregate.ipynb__: Analyze results of nearest neighbors analysis
-- __nearest_neighbors*.py__: Scripts I used to find the nearest neighbors for tweets
-
-### Other
-- network_plots.py: Some functions for plotting networks
-- __config.py__: Defines some directory locations
+- __cascade.py__: Class for creating retweet cascades 
+- __build_cascades.py__: Script for meta-analysis of different retweet attribution methods 
+- __nearest_neighbors_revised.py__: Script for encoding sentences using SBERT and finding nearest neighbors
+- __config.py__: Defines some grid directory locations
 - __imports.py__: Common imports
-- __hashtags.py__: List of all hashtags
+
+### Main Notebooks
+The notebooks with my final results begin with THESIS.
+- __THESIS_Preliminary_Findings.ipynb__: Final visualizations for first parts of thesis (retweet cascades, exposure curves, nlp stuff)
+- __THESIS_Trending_Effect_Table_Regressions.ipynb__: Notebook with regression analysis
+- __THESIS_Specification_Curve_2.ipynb__: Spec curve analysis
+- __THESIS_Trending_Effect_Qualitative.ipynb__: Work on undwerstanding network characteristics of people possible exposed through Trending Topics page.
+
+### Notebook Directories
+There are many more notebooks exploring different avenues. I moved them into separate directories. 
+1. __preliminary__: This contains notebooks for analysis of cascades, retweets, and exposure curves.
+2. __nlp__: This contains notebooks for analyzing sentence embeddings of tweets. 
+3. __trending__: This contains notebooks for quantifying the return to the Trending Topics page. 
+4. __other__: misc files. 
