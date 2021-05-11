@@ -4,3 +4,10 @@
 __pycache__/*
 plots/*
 TwitterCoordination
+*.pdf
+*.gv
+*~
+*.pkl
+*.png
+*.tex
+*.graphml

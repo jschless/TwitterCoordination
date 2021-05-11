@@ -115,6 +115,17 @@ def build_df(hashtag, tweet_dict, exposures,
         start = trending_data.datetime.min() + timedelta(hours=5, minutes=30)
         end = trending_data.datetime.max() + timedelta(hours=5, minutes=30)
 
+        if len(trending_data) == 0:
+            print(hashtag, ' did not trend with location less than or equal to',
+                  trending_loc_cutoff)
+            return None, None
+        start = trending_data.datetime.min() + timedelta(hours=5, minutes=30)
+        end = trending_data.datetime.max() + timedelta(hours=5, minutes=30)
+
+    else:
+        trending_data = pd.read_csv(os.path.join(TRENDS_DIR, hashtag+'.csv'), parse_dates=['datetime'])
+        start = trending_data.datetime.min() + timedelta(hours=5, minutes=30)
+        end = trending_data.datetime.max() + timedelta(hours=5, minutes=30)
     min_date = start - timedelta(hours=6)
     max_date = end + timedelta(hours=6)
 
@@ -127,6 +138,10 @@ def build_df(hashtag, tweet_dict, exposures,
         temp = temp.resample(time_bin).count().username.loc[min_date:max_date]
         series_list.append(temp)
     temp = df[df.type == 'regular'] # only use regular tweets
+
+    series_list.append(temp[temp.total_exposure > 1].resample(time_bin).count().username.loc[min_date:max_date])
+    series_list.append(temp[temp.total_exposure <= 1].resample(time_bin).count().username.loc[min_date:max_date])
+
     series_list.append(temp[temp.total_exposure > 0].resample(time_bin).count().username.loc[min_date:max_date])
 
     temp = temp[temp.total_exposure == 0].resample(time_bin).count().username.loc[min_date:max_date]
@@ -134,7 +149,9 @@ def build_df(hashtag, tweet_dict, exposures,
 
 
     new_df = pd.DataFrame(series_list).T
-    new_df.columns=[*types, 'nonzero_exposure_regular', 'zero_exposure_regular']
+
+    new_df.columns=[*types, 'greater_1_exposure_regular', 'leq_1_exposure_regular',
+                    'nonzero_exposure_regular', 'zero_exposure_regular']
     new_df['total_engagement'] = new_df[types].sum(axis=1)
     new_df['rt_engagement'] = new_df[['regular_retweet', 'template_retweet']].sum(axis=1)
 
