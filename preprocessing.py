@@ -12,7 +12,8 @@ from config import CASCADE_DIR
 
 bandwagon_hashtags = set(['armedforcesflagday', 'goodgovernanceday',
                 'modiagain2019', 'bjpkamaljyoti', 'mainbhichowkidar',
-                     'bjpvijaysankalpbikerally', 'bogibeelbridge'])
+                     'bjpvijaysankalpbikerally', 'bogibeelbridge',
+                     'pmkisan', 'indiabolemodidobara'])
 
 never_trended = set(['hooghly_chalo', 'congressframedamitshah',
                      'congressagainstnationalsecurity', 'nris4modi'])

@@ -12,13 +12,17 @@ g = network_plots.load_follower_network()
 username_to_index = {g.vp.usernames[i]: i for i in g.vertices()}
 
 def is_following(child, parent):
+    if child == parent:
+        # you can be exposed to yourself
+        return True
+
     child_id = username_to_index.get(child, None)
     parent_id = username_to_index.get(parent, None)
     if child_id is None or parent_id is None:
         return False
     return g.edge(child_id, parent_id) is not None
 
-users = True
+users = False
 if users:
     print('running script to calculate exposure based on exposure to unique users')
 else:
@@ -58,7 +62,7 @@ for ht, tweets in tqdm(campaigns.items()):
 import pickle, os
 from config import TWITTER_DATA_DIR
 
-f_name = os.path.join(TWITTER_DATA_DIR, 'exposure_results_n_users.pkl')
+f_name = os.path.join(TWITTER_DATA_DIR, 'exposure_results_include_self_n_tweets.pkl')
 with open(f_name, 'wb') as f:
     pickle.dump(results, f)
 print('dumped the results into ', f_name)

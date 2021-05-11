@@ -1,22 +1,31 @@
-import preprocessing
 from sentence_transformers import SentenceTransformer
 from sklearn.neighbors import NearestNeighbors
 import pickle, os
 from config import TWITTER_DATA_DIR
 from tqdm import tqdm
 import numpy as np
+import re
 
-# 17NOV2020: job failed bc of memory shortage on iteration 37
+def process_text(text):
+    # remove link
+    text = re.sub(r'http\S+', '', text)
 
-campaigns = preprocessing.load_campaign()
+    # remove hashtags
+    text = re.sub(r'#(\w+)', '', text)
+
+    # remove tags
+    text = re.sub(r'@(\w+)', '', text)
+
+    if text.isspace(): # string is empty
+        return None
+    return text
+
+with open(os.path.join(TWITTER_DATA_DIR, 'campaign_tweets_new.pkl'), 'rb') as f:
+    campaigns = pickle.load(f)
+
 result_dict = {}
 embeddings_dict = {}
-i = 1
 for ht, campaign in tqdm(campaigns.items()):
-    i += 1
-    if i < 37:
-        continue
-
     result = {}
     unique_tweets = []
     templates = []
@@ -35,11 +44,14 @@ for ht, campaign in tqdm(campaigns.items()):
         result['len_total_templates'] = n_templates
 
     model = SentenceTransformer('xlm-r-100langs-bert-base-nli-stsb-mean-tokens')
-    corpus_embeddings = model.encode([x['text'] for x in unique_tweets])
+
+    strings = [process_text(x['text']) for x in unique_tweets]
+    strings = [x for x in strings if x is not None]
+    corpus_embeddings = model.encode()
     embeddings_dict[ht] = corpus_embeddings
 
     X_sbert = np.vstack(corpus_embeddings).T
-    N_NEIGHBORS = round(len(unique_tweets)/20) # search 5%
+    N_NEIGHBORS = round(len(unique_tweets)/100) # search 5%
     result['n_neighbors'] = N_NEIGHBORS
     nbrs = NearestNeighbors(n_neighbors=N_NEIGHBORS, algorithm='ball_tree').fit(X_sbert.T)
     distances, indices = nbrs.kneighbors(X_sbert.T)
@@ -60,8 +72,8 @@ for ht, campaign in tqdm(campaigns.items()):
     global_pct_temp = len(templates)/len(unique_tweets)
     result['global_pct_temp'] = global_pct_temp
     result_dict[ht] = result
-    with open(os.path.join(TWITTER_DATA_DIR, 'neighbors_results_2.pkl'), 'wb') as f:
+    with open(os.path.join(TWITTER_DATA_DIR, 'neighbors_results_cleaned_text.pkl'), 'wb') as f:
         pickle.dump(result_dict, f)
 
-    with open(os.path.join(TWITTER_DATA_DIR, 'unique_tweet_embeddings_2.pkl'), 'wb') as f:
+    with open(os.path.join(TWITTER_DATA_DIR, 'unique_tweet_embeddings_cleaned_text.pkl'), 'wb') as f:
         pickle.dump(embeddings_dict, f)
