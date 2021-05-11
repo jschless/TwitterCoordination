@@ -23,7 +23,7 @@ The notebooks with my final results begin with THESIS.
 
 ### Notebook Directories
 There are many more notebooks exploring different avenues. I moved them into separate directories. 
-1. __preliminary__: This contains notebooks for analysis of cascades, retweets, and exposure curves.
-2. __nlp__: This contains notebooks for analyzing sentence embeddings of tweets. 
-3. __trending__: This contains notebooks for quantifying the return to the Trending Topics page. 
-4. __other__: misc files. 
+1. __Preliminary__: This contains notebooks for analysis of cascades, retweets, and exposure curves.
+2. __NLP__: This contains notebooks for analyzing sentence embeddings of tweets. 
+3. __Trending__: This contains notebooks for quantifying the return to the Trending Topics page. 
+4. __Other__: misc files. 
