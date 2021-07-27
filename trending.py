@@ -114,6 +114,7 @@ def build_df(hashtag, tweet_dict, exposures,
         trending_data = pd.read_csv(os.path.join(TRENDS_DIR, hashtag+'.csv'), parse_dates=['datetime'])
         start = trending_data.datetime.min() + timedelta(hours=5, minutes=30)
         end = trending_data.datetime.max() + timedelta(hours=5, minutes=30)
+
     min_date = start - timedelta(hours=6)
     max_date = end + timedelta(hours=6)
 
@@ -126,10 +127,6 @@ def build_df(hashtag, tweet_dict, exposures,
         temp = temp.resample(time_bin).count().username.loc[min_date:max_date]
         series_list.append(temp)
     temp = df[df.type == 'regular'] # only use regular tweets
-
-    series_list.append(temp[temp.total_exposure > 1].resample(time_bin).count().username.loc[min_date:max_date])
-    series_list.append(temp[temp.total_exposure <= 1].resample(time_bin).count().username.loc[min_date:max_date])
-
     series_list.append(temp[temp.total_exposure > 0].resample(time_bin).count().username.loc[min_date:max_date])
 
     temp = temp[temp.total_exposure == 0].resample(time_bin).count().username.loc[min_date:max_date]
@@ -137,9 +134,7 @@ def build_df(hashtag, tweet_dict, exposures,
 
 
     new_df = pd.DataFrame(series_list).T
-
-    new_df.columns=[*types, 'greater_1_exposure_regular', 'leq_1_exposure_regular',
-                    'nonzero_exposure_regular', 'zero_exposure_regular']
+    new_df.columns=[*types, 'nonzero_exposure_regular', 'zero_exposure_regular']
     new_df['total_engagement'] = new_df[types].sum(axis=1)
     new_df['rt_engagement'] = new_df[['regular_retweet', 'template_retweet']].sum(axis=1)
 
@@ -152,12 +147,10 @@ def build_df(hashtag, tweet_dict, exposures,
         # save data strucutres now that we've done the expensive stuff
         return new_df, temp, start
 
-
     if len(temp) == 0:
         print('dataframe is empty for some reason', temp)
         print('dates', min_date, max_date)
         return df, df
-
     exact_trending_loc = find_jump(temp, start, cutoff_choice, periods)
 
     if normalize_time:
@@ -190,7 +183,6 @@ def find_jump(x, start, cutoff_choice, periods=1):
     # takes a ts and finds the spike within the start period
     diffed = x.diff(periods=periods)
     #delta = pd.Timedelta(diffed.index.values[1] - diffed.index.values[0])
-
     try:
         delta = pd.Timedelta(x.index.values[1] - x.index.values[0])
     except Exception as e:
@@ -279,7 +271,6 @@ def highlight_reg_output(res_df):
 
     display(res_df.style.apply(highlight_significant, axis=1))
 
-
 def plot_trending_ts(df, exact_trending_loc, hashtag, cols=['zero_exposure_regular', 'total_engagement'],
                      trending_rankings=None):
     # takes a df and plots the time series with some acoutrements
@@ -309,13 +300,11 @@ def plot_trending_ts(df, exact_trending_loc, hashtag, cols=['zero_exposure_regul
                  label='Resolution Error')
         ax.plot([start, end], [max_hist_level]*2, '-', color='black', alpha=1)
         ax.plot([start, end], [max_hist_level]*2, '|', color='black')
-
         if i == 0:
             ax.text(start + (end-start)/2, max_hist_level*1.05, f'#{hashtag} trending', fontsize=12, horizontalalignment='center')
         if trending_rankings and col == 'zero_exposure_regular':
             for i in range(len(trending_rankings)):
                 ax.text(start+timedelta(hours=i), max_hist_level*1.05, trending_rankings[i])
-
         ax.set_xlabel('Time', fontsize=18)
         ax.set_ylabel('Tweet volume', fontsize=16)
         ax.set_xlim(min_date, max_date)
