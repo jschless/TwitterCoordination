@@ -1,5 +1,5 @@
 # TwitterCoordination
-This repo contains the files I used in Chapter 2 of my Master's Thesis. 
+This repo contains the files I used in Chapter 2 of my Master's Thesis. This work eventually led to a published paper that can be found [here](https://arxiv.org/abs/2304.05382).
 
 
 ## Main Files 
